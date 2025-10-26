@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { fetchRestaurants } from './services/geminiService';
+import { fetchRestaurants, getCountryFromCoords } from './services/geminiService';
 import type { Restaurant, GeolocationCoordinates } from './types';
 import RestaurantCard from './components/RestaurantCard';
 import LocationIcon from './components/icons/LocationIcon';
@@ -15,25 +15,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState<boolean>(false);
 
-  const processResults = (results: Restaurant[]): Restaurant[] => {
-    const sorted = results
-      .filter(r => r.tabelogRating >= 3.3)
-      .sort((a, b) => b.tabelogRating - a.tabelogRating);
-
-    const tier4 = sorted.filter(r => r.tabelogRating >= 4.0);
-    if (tier4.length > 0) return tier4;
-    
-    const tier38 = sorted.filter(r => r.tabelogRating >= 3.8);
-    if (tier38.length > 0) return tier38;
-
-    const tier35 = sorted.filter(r => r.tabelogRating >= 3.5);
-    if (tier35.length > 0) return tier35;
-
-    return sorted.filter(r => r.tabelogRating >= 3.3);
-  };
-
-  const handleSearch = useCallback(async () => {
-    if (!locationQuery.trim()) {
+  const executeSearch = useCallback(async (
+    query: string, 
+    searchCoords: GeolocationCoordinates | null
+  ) => {
+    if (!query.trim()) {
       setError('Please enter a location.');
       return;
     }
@@ -44,9 +30,9 @@ const App: React.FC = () => {
     setDisplayedCount(PAGE_SIZE);
 
     try {
-      const results = await fetchRestaurants(locationQuery, coords);
-      const finalResults = processResults(results);
-      setRestaurants(finalResults);
+      const results = await fetchRestaurants(query, searchCoords);
+      const sortedResults = results.sort((a, b) => b.tabelogRating - a.tabelogRating);
+      setRestaurants(sortedResults);
     } catch (e) {
       if (e instanceof Error) {
         setError(e.message);
@@ -56,7 +42,11 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [locationQuery, coords]);
+  }, []);
+
+  const handleSearch = () => {
+    executeSearch(locationQuery, coords);
+  };
 
   const handleLocateMe = () => {
     if (!navigator.geolocation) {
@@ -66,18 +56,42 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocationQuery('My Current Location');
-        setCoords({
+      async (position) => {
+        const newCoords = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-        });
+        };
+        try {
+          const country = await getCountryFromCoords(newCoords);
+          if (country.toLowerCase().trim() !== 'japan') {
+            setError('To use your current location, you must be in Japan.');
+            setIsLoading(false);
+            return;
+          }
+          // Location is valid, update state and perform search
+          setLocationQuery('My Current Location');
+          setCoords(newCoords);
+          await executeSearch('My Current Location', newCoords);
+        } catch (e) {
+          if (e instanceof Error) {
+              setError(e.message);
+          } else {
+              setError('An unknown error occurred while verifying location.');
+          }
+          setIsLoading(false);
+        }
+      },
+      (error) => {
+        let message = 'Unable to retrieve your location. Please enter a location manually.';
+        if (error.code === error.PERMISSION_DENIED) {
+            message = 'Location permission denied. Please enable it in your browser settings to use this feature.';
+        } else if (error.code === error.TIMEOUT) {
+            message = 'Could not get your location in time. Please try again or enter a location manually.';
+        }
+        setError(message);
         setIsLoading(false);
       },
-      () => {
-        setError('Unable to retrieve your location. Please grant permission or enter a location manually.');
-        setIsLoading(false);
-      }
+      { timeout: 10000 } // 10-second timeout
     );
   };
   
@@ -142,7 +156,7 @@ const App: React.FC = () => {
           {!isLoading && searched && restaurants.length === 0 && (
             <div className="text-center mt-16 bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md">
                 <h2 className="text-2xl font-semibold mb-2">No Restaurants Found</h2>
-                <p className="text-gray-600 dark:text-gray-400">We couldn't find any restaurants for that location on Tabelog with a rating of 3.3 or higher. Please try a different location.</p>
+                <p className="text-gray-600 dark:text-gray-400">We couldn't find any restaurants for that location on Tabelog. Please try a different location.</p>
             </div>
           )}
           

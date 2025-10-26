@@ -61,6 +61,24 @@ const responseSchema = {
     required: ["restaurants"],
 };
 
+export const getCountryFromCoords = async (coords: GeolocationCoordinates): Promise<string> => {
+    const prompt = `What country are the coordinates latitude ${coords.latitude} and longitude ${coords.longitude} located in? Respond with only the country name.`;
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+        });
+        const country = response.text.trim();
+        if (!country) {
+            throw new Error("Could not determine country from coordinates.");
+        }
+        return country;
+    } catch (error) {
+        console.error("Error fetching country from Gemini API:", error);
+        throw new Error("Failed to verify location. Please try again.");
+    }
+};
+
 
 export const fetchRestaurants = async (locationQuery: string, coords: GeolocationCoordinates | null): Promise<Restaurant[]> => {
   let locationPromptPart = `near the location: "${locationQuery}"`;
@@ -70,7 +88,6 @@ export const fetchRestaurants = async (locationQuery: string, coords: Geolocatio
   
   const prompt = `
     Find top-rated restaurants on tabelog.com/en/ ${locationPromptPart}.
-    Search for restaurants with a Tabelog rating of 3.3 or higher.
     Return up to 40 results if possible, sorted by rating in descending order.
 
     For each restaurant, provide the following details:
