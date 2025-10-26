@@ -1,0 +1,7 @@
+{
+  "name": "Tabelog Restaurant Finder",
+  "description": "Find top-rated restaurants on Tabelog based on your current location or a specified address. This app provides restaurant details, ratings, and links to Tabelog and Google Maps.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
